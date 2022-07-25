@@ -1,7 +1,5 @@
 <script setup>
 import { onMounted, ref, watch, watchEffect } from 'vue'
-import qrcode from 'qrcode'
-import { Html5QrcodeScanner } from "html5-qrcode"
 
 const MAXIMUM_MESSAGE_SIZE = 65535;
 const END_OF_FILE_MESSAGE = 'EOF';
@@ -12,17 +10,26 @@ const ice = ref(null)
 const showice = ref(null)
 const showDialog = ref(false)
 
-const ws = new WebSocket('ws://localhost:3001')
+const ws = new WebSocket('ws://localhost:8000')
 
 ws.onopen = () => {
-  console.log('open')
+  console.log('opened, request key')
+  ws.send(JSON.stringify({
+    phase: 'req_key'
+  }))
+}
+
+ws.onmessage = (msg) => {
+  console.log(JSON.parse(msg.data))
 }
 
 ws.onclose = () => {
+  ws.send(JSON.stringify({
+    phase: 'close'
+  }))
   console.log('close')
 }
 
-let p
 let pass = "i_am_an_id"
 let set_connection
 let recv_connection
@@ -41,9 +48,11 @@ const start = () => {
   set_connection = new RTCPeerConnection(ice_list)
   set_connection.onicecandidate = e => {
     showice.value = JSON.stringify(set_connection.localDescription)
-    qrcode.toCanvas(document.getElementById('ice_qrcode'), JSON.stringify(set_connection.localDescription), {
-      width: '200'
-    })
+    let msg = {
+      phase: 'start',
+      ice: set_connection.localDescription
+    }
+    ws.send(JSON.stringify(msg))
   }
   channel = set_connection.createDataChannel(pass)
   // channel.binaryType = "arraybuffer"
@@ -136,11 +145,6 @@ const select = async (e) => {
   channel.send(END_OF_FILE_MESSAGE);
 }
 
-
-onMounted(() => {
-
-})
-
 </script>
 
 <template>
@@ -176,7 +180,6 @@ onMounted(() => {
               id="ice"
               class="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
             />
-            <canvas id="ice_qrcode" />
             <h1 class="text-lg font-medium text-indigo-600">Input ICE</h1>
             <textarea
               v-model="ice"
