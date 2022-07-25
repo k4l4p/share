@@ -13,6 +13,16 @@ const content = ref('')
 const msg = ref(null)
 const showDialog = ref(false)
 
+const ws = new WebSocket('ws://localhost:3001')
+
+ws.onopen = () => {
+  console.log('open')
+}
+
+ws.onclose = () => {
+  console.log('close')
+}
+
 let p
 let pass = "i_am_an_id"
 let set_connection
