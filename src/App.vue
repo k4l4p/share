@@ -1,6 +1,7 @@
 <script setup>
-import { ref, watch, watchEffect } from 'vue'
-
+import { onMounted, ref, watch, watchEffect } from 'vue'
+import qrcode from 'qrcode'
+import { Html5QrcodeScanner } from "html5-qrcode"
 
 const MAXIMUM_MESSAGE_SIZE = 65535;
 const END_OF_FILE_MESSAGE = 'EOF';
@@ -9,8 +10,6 @@ const recv_buff = []
 const phase = ref('')
 const ice = ref(null)
 const showice = ref(null)
-const content = ref('')
-const msg = ref(null)
 const showDialog = ref(false)
 
 const ws = new WebSocket('ws://localhost:3001')
@@ -42,12 +41,12 @@ const start = () => {
   set_connection = new RTCPeerConnection(ice_list)
   set_connection.onicecandidate = e => {
     showice.value = JSON.stringify(set_connection.localDescription)
+    qrcode.toCanvas(document.getElementById('ice_qrcode'), JSON.stringify(set_connection.localDescription), {
+      width: '200'
+    })
   }
   channel = set_connection.createDataChannel(pass)
   // channel.binaryType = "arraybuffer"
-  channel.onmessage = (msg) => {
-    content.value = content.value + '\n' + msg.data
-  }
   channel.onopen = e => {
     let fileElem = document.getElementById("fileElem")
     fileElem.click()
@@ -75,31 +74,31 @@ const recv = () => {
       try {
         if (isNameSet) {
           if (msg.data !== END_OF_FILE_MESSAGE) {
-          recv_buff.push(msg.data)
-        } else {
-          // convert array of arrayBuffer to one arraybuffer
-          const arrayBuffer = recv_buff.reduce((acc, arrayBuffer) => {
-            const tmp = new Uint8Array(acc.byteLength + arrayBuffer.byteLength);
-            tmp.set(new Uint8Array(acc), 0);
-            tmp.set(new Uint8Array(arrayBuffer), acc.byteLength);
-            return tmp;
-          }, new Uint8Array());
-          const blob = new Blob([arrayBuffer]);
-          const a = document.createElement('a');
-          const url = window.URL.createObjectURL(blob);
-          a.href = url;
-          a.download = channel.filename;
-          a.click();
-          window.URL.revokeObjectURL(url);
-          a.remove()
-          channel.close();
-        }
+            recv_buff.push(msg.data)
+          } else {
+            // convert array of arrayBuffer to one arraybuffer
+            const arrayBuffer = recv_buff.reduce((acc, arrayBuffer) => {
+              const tmp = new Uint8Array(acc.byteLength + arrayBuffer.byteLength);
+              tmp.set(new Uint8Array(acc), 0);
+              tmp.set(new Uint8Array(arrayBuffer), acc.byteLength);
+              return tmp;
+            }, new Uint8Array());
+            const blob = new Blob([arrayBuffer]);
+            const a = document.createElement('a');
+            const url = window.URL.createObjectURL(blob);
+            a.href = url;
+            a.download = channel.filename;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove()
+            channel.close();
+          }
         } else {
           //dirty way to save filename
           channel.filename = msg.data
           isNameSet = true
         }
-        
+
       } catch (e) {
         console.log('Cannot transmit!')
       }
@@ -113,7 +112,7 @@ const recv = () => {
 
 const submitIce = async () => {
   if (phase.value === 'start') {
-  console.log(channel.negotiated)
+    console.log(channel.negotiated)
 
     let temp = JSON.parse(ice.value)
     await set_connection.setRemoteDescription(temp)
@@ -124,10 +123,6 @@ const submitIce = async () => {
       recv_connection.setLocalDescription(e)
     })
   }
-}
-
-const send = () => {
-  channel.send(msg.value)
 }
 
 const select = async (e) => {
@@ -141,14 +136,19 @@ const select = async (e) => {
   channel.send(END_OF_FILE_MESSAGE);
 }
 
+
+onMounted(() => {
+
+})
+
 </script>
 
 <template>
   <div class="container mx-auto h-screen">
     <div class="relative w-full h-full">
       <div
-        :class="[showDialog ? 'max-h-96' : 'max-h-24']"
-        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-all duration-100 ease-out overflow-hidden w-full"
+        :class="[showDialog ? 'max-h-screen' : 'max-h-24']"
+        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-all duration-500 ease-out overflow-hidden w-full"
       >
         <div class="flex w-full justify-center">
           <div
@@ -176,6 +176,7 @@ const select = async (e) => {
               id="ice"
               class="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
             />
+            <canvas id="ice_qrcode" />
             <h1 class="text-lg font-medium text-indigo-600">Input ICE</h1>
             <textarea
               v-model="ice"
@@ -192,56 +193,6 @@ const select = async (e) => {
             <input type="file" id="fileElem" style="display:none" @change="select" />
           </div>
         </div>
-        <!-- <div class="p-4 my-2 bg-purple-100">
-          <h1 class="text-lg font-medium text-indigo-600">Show ICE</h1>
-          <textarea
-            v-model="showice"
-            rows="4"
-            name="ice"
-            id="ice"
-            class="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-          />
-          <h1 class="text-lg font-medium text-indigo-600">Input ICE</h1>
-          <textarea
-            v-model="ice"
-            rows="4"
-            name="ice"
-            id="ice"
-            class="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-          />
-          <button
-            @click="submitIce()"
-            class="bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
-            id="start"
-          >Submit</button>
-        </div>
-        <div class="flex bg-gray-50 shadow-md rounded-md p-4 my-2">
-          <div class="flex flex-col gap-2 item-center">
-            <button
-              @click="start()"
-              class="bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
-              id="start"
-            >Start</button>
-            <button
-              @click="recv"
-              class="bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
-              id="start"
-            >Receive</button>
-          </div>
-          <textarea
-            v-model="msg"
-            rows="4"
-            name="comment"
-            id="comment"
-            class="ml-2 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-96 sm:text-sm border-gray-300 rounded-md"
-          />
-        </div>
-        <button
-          @click="send"
-          type="button"
-          class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        >Send</button>
-        <div class="border border-sky-400">{{content}}</div>-->
       </div>
     </div>
   </div>
