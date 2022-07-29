@@ -13,14 +13,36 @@ const showDialog = ref(false)
 const ws = new WebSocket('ws://localhost:8000')
 
 ws.onopen = () => {
-  console.log('opened, request key')
-  ws.send(JSON.stringify({
-    phase: 'req_key'
-  }))
+  console.log('opened')
+
 }
 
 ws.onmessage = (msg) => {
-  console.log(JSON.parse(msg.data))
+  let data = JSON.parse(msg.data)
+  console.log(data)
+  switch (phase.value) {
+    case 'start':
+      if (data.phase === 'req_key') {
+        if (data.key) {
+        showice.value = data.key
+      }
+      }else {
+        set_connection.setRemoteDescription(data.ice)
+      }
+      
+      break
+    case 'recv':
+      let temp = data.ice
+      recv_connection.setRemoteDescription(temp).then(()=>{
+        recv_connection.createAnswer().then((e) => {
+        recv_connection.setLocalDescription(e)
+      })
+      })
+      
+      break
+    default:
+      break
+  }
 }
 
 ws.onclose = () => {
@@ -29,6 +51,11 @@ ws.onclose = () => {
   }))
   console.log('close')
 }
+
+window.onbeforeunload = function () {
+  ws.close();
+};
+
 
 let pass = "i_am_an_id"
 let set_connection
@@ -45,17 +72,20 @@ const ice_list = {
 const start = () => {
   showDialog.value = true
   phase.value = 'start'
+  ws.send(JSON.stringify({
+    phase: 'req_key'
+  }))
   set_connection = new RTCPeerConnection(ice_list)
   set_connection.onicecandidate = e => {
-    showice.value = JSON.stringify(set_connection.localDescription)
     let msg = {
       phase: 'start',
       ice: set_connection.localDescription
     }
     ws.send(JSON.stringify(msg))
   }
+
+
   channel = set_connection.createDataChannel(pass)
-  // channel.binaryType = "arraybuffer"
   channel.onopen = e => {
     let fileElem = document.getElementById("fileElem")
     fileElem.click()
@@ -74,7 +104,12 @@ const recv = () => {
   phase.value = 'recv'
   recv_connection = new RTCPeerConnection(ice_list)
   recv_connection.onicecandidate = e => {
-    showice.value = JSON.stringify(recv_connection.localDescription)
+    // showice.value = JSON.stringify(recv_connection.localDescription)
+    ws.send(JSON.stringify({
+      phase: 'recv',
+      key: ice.value ,
+      ice: recv_connection.localDescription
+    }))
   }
   recv_connection.ondatachannel = (e) => {
     channel = e.channel
@@ -126,11 +161,18 @@ const submitIce = async () => {
     let temp = JSON.parse(ice.value)
     await set_connection.setRemoteDescription(temp)
   } else if (phase.value === 'recv') {
-    let temp = JSON.parse(ice.value)
-    await recv_connection.setRemoteDescription(temp)
-    await recv_connection.createAnswer().then((e) => {
-      recv_connection.setLocalDescription(e)
-    })
+    // let temp = JSON.parse(ice.value)
+    // await recv_connection.setRemoteDescription(temp)
+    // await recv_connection.createAnswer().then((e) => {
+    //   recv_connection.setLocalDescription(e)
+    // })
+    if (ice.value) {
+      ws.send(JSON.stringify({
+        phase: phase.value,
+        key: ice.value
+      }))
+    }
+
   }
 }
 
