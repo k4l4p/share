@@ -5,40 +5,56 @@ const MAXIMUM_MESSAGE_SIZE = 65535;
 const END_OF_FILE_MESSAGE = 'EOF';
 const recv_buff = []
 
-const phase = ref('')
-const ice = ref(null)
-const showice = ref(null)
+const side = ref('')
+const ID = ref(null)
+const showID = ref(null)
 const showDialog = ref(false)
 
-const ws = new WebSocket('ws://localhost:8000')
+const ws = new WebSocket('ws://192.168.128.87:8000')
 
 ws.onopen = () => {
   console.log('opened')
-
 }
 
 ws.onmessage = (msg) => {
   let data = JSON.parse(msg.data)
   console.log(data)
-  switch (phase.value) {
+  switch (side.value) {
     case 'start':
-      if (data.phase === 'req_key') {
-        if (data.key) {
-        showice.value = data.key
+      if (data.action === 'req_key') {
+        showID.value = data.key
       }
-      }else {
-        set_connection.setRemoteDescription(data.ice)
+      if (data.action === 'send_decr') {
+        set_connection.setRemoteDescription(data.decr)
+        ws.send(JSON.stringify({
+          side: 'start',
+          action: 'get_ice'
+        }))
       }
-      
+      if (data.action === 'send_ice') {
+        set_connection.addIceCandidate(data.ice)
+      }
+
       break
     case 'recv':
-      let temp = data.ice
-      recv_connection.setRemoteDescription(temp).then(()=>{
-        recv_connection.createAnswer().then((e) => {
-        recv_connection.setLocalDescription(e)
-      })
-      })
-      
+      if (data.action === 'send_decr') {
+        let temp = data.decr
+        recv_connection.setRemoteDescription(temp).then(() => {
+          recv_connection.createAnswer().then((e) => {
+            recv_connection.setLocalDescription(e).then(() => {
+              ws.send(JSON.stringify({
+                side: 'recv',
+                action: 'send_decr',
+                key: ID.value,
+                decr: recv_connection.localDescription
+              }))
+            })
+          })
+        })
+      }
+      if (data.action === 'send_ice') {
+        recv_connection.addIceCandidate(data.ice)
+      }
       break
     default:
       break
@@ -46,9 +62,11 @@ ws.onmessage = (msg) => {
 }
 
 ws.onclose = () => {
-  ws.send(JSON.stringify({
-    phase: 'close'
-  }))
+  if (side.value === 'start') {
+    ws.send(JSON.stringify({
+      action: 'close'
+    }))
+  }
   console.log('close')
 }
 
@@ -71,15 +89,18 @@ const ice_list = {
 
 const start = () => {
   showDialog.value = true
-  phase.value = 'start'
+  side.value = 'start'
   ws.send(JSON.stringify({
-    phase: 'req_key'
+    side: 'start',
+    action: 'req_key'
   }))
   set_connection = new RTCPeerConnection(ice_list)
   set_connection.onicecandidate = e => {
+    console.log('start send ice')
     let msg = {
-      phase: 'start',
-      ice: set_connection.localDescription
+      side: 'start',
+      action: 'send_ice',
+      ice: e.candidate
     }
     ws.send(JSON.stringify(msg))
   }
@@ -87,33 +108,39 @@ const start = () => {
 
   channel = set_connection.createDataChannel(pass)
   channel.onopen = e => {
-    let fileElem = document.getElementById("fileElem")
-    fileElem.click()
-    console.log('open!')
+    console.log('channel open!')
+    document.getElementById("fileElem").click()
   }
   channel.onclose = e => {
     console.log('close!!')
   }
   set_connection.createOffer()
-    .then(offer => set_connection.setLocalDescription(offer))
+    .then(offer => set_connection.setLocalDescription(offer).then(() => {
+      let msg = {
+        side: 'start',
+        action: 'send_decr',
+        decr: set_connection.localDescription
+      }
+      ws.send(JSON.stringify(msg))
+    }))
 
 }
 
 const recv = () => {
   showDialog.value = true
-  phase.value = 'recv'
+  side.value = 'recv'
   recv_connection = new RTCPeerConnection(ice_list)
   recv_connection.onicecandidate = e => {
-    // showice.value = JSON.stringify(recv_connection.localDescription)
+    console.log('recv send ice')
     ws.send(JSON.stringify({
-      phase: 'recv',
-      key: ice.value ,
-      ice: recv_connection.localDescription
+      side: 'recv',
+      action: 'send_ice',
+      key: ID.value,
+      ice: e.candidate
     }))
   }
   recv_connection.ondatachannel = (e) => {
     channel = e.channel
-    // channel.binaryType = 'blob'
     channel.onmessage = (msg) => {
       try {
         if (isNameSet) {
@@ -155,24 +182,12 @@ const recv = () => {
 }
 
 const submitIce = async () => {
-  if (phase.value === 'start') {
-    console.log(channel.negotiated)
-
-    let temp = JSON.parse(ice.value)
-    await set_connection.setRemoteDescription(temp)
-  } else if (phase.value === 'recv') {
-    // let temp = JSON.parse(ice.value)
-    // await recv_connection.setRemoteDescription(temp)
-    // await recv_connection.createAnswer().then((e) => {
-    //   recv_connection.setLocalDescription(e)
-    // })
-    if (ice.value) {
-      ws.send(JSON.stringify({
-        phase: phase.value,
-        key: ice.value
-      }))
-    }
-
+  if (ID.value) {
+    ws.send(JSON.stringify({
+      side: side.value,
+      action: 'send_key',
+      key: ID.value
+    }))
   }
 }
 
@@ -182,7 +197,6 @@ const select = async (e) => {
   channel.send(file.name)
   for (let i = 0; i < arrayBuffer.byteLength; i += MAXIMUM_MESSAGE_SIZE) {
     channel.send(arrayBuffer.slice(i, i + MAXIMUM_MESSAGE_SIZE));
-    // channel.send(file.slice(i, i + MAXIMUM_MESSAGE_SIZE))
   }
   channel.send(END_OF_FILE_MESSAGE);
 }
@@ -199,43 +213,52 @@ const select = async (e) => {
         <div class="flex w-full justify-center">
           <div
             @click="start"
-            :class="[phase === 'recv' ? 'pointer-events-none opacity-70' : '']"
+            :class="[side === 'recv' ? 'pointer-events-none opacity-70' : '']"
             class="rounded-full bg-indigo-400 shadow-lg h-20 w-20 flex justify-center items-center cursor-pointer hover:bg-sky-600 transition-all duration-100 ease-out"
           >
             <h1 class="text-white font-bold text-xl">Send</h1>
           </div>
           <div
             @click="recv"
-            :class="[phase === 'start' ? 'pointer-events-none opacity-70' : '']"
+            :class="[side === 'start' ? 'pointer-events-none opacity-70' : '']"
             class="ml-2 rounded-full bg-indigo-400 shadow-lg h-20 w-20 flex justify-center items-center cursor-pointer hover:bg-sky-600 transition-all duration-100 ease-out"
           >
             <h1 class="text-white font-bold text-xl">Receive</h1>
           </div>
         </div>
-        <div class="mt-5 w-full">
-          <div class="p-4 my-2 bg-purple-100">
-            <h1 class="text-lg font-medium text-indigo-600">Show ICE</h1>
-            <textarea
-              v-model="showice"
-              rows="4"
-              name="ice"
-              id="ice"
-              class="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-            />
-            <h1 class="text-lg font-medium text-indigo-600">Input ICE</h1>
-            <textarea
-              v-model="ice"
-              rows="4"
-              name="ice"
-              id="ice"
-              class="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-            />
-            <button
+        <div class="mt-5 flex justify-center">
+          <div class="p-4 my-2 bg-indigo-100 rounded-lg ">
+            <div v-if="side === 'start'">
+              <label for="email" class="block text-sm font-medium text-gray-700">ID</label>
+              <div class="mt-1">
+                <input
+                  v-model="showID"
+                  type="text"
+                  name="showID"
+                  id="showID"
+                  readonly
+                  class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                />
+                 <input type="file" id="fileElem" hidden @change="select" />
+              </div>
+            </div>
+            <div v-else-if="side === 'recv'">
+              <label for="email" class="block text-sm font-medium text-gray-700">ID</label>
+              <div class="mt-1">
+                <input
+                  v-model="ID"
+                  type="text"
+                  name="ID"
+                  id="ID"
+                  class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                />
+              </div>
+              <button
               @click="submitIce()"
-              class="bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
+              class="mt-2 bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
               id="start"
             >Submit</button>
-            <input type="file" id="fileElem" style="display:none" @change="select" />
+            </div>
           </div>
         </div>
       </div>
