@@ -109,7 +109,7 @@ const start = () => {
   channel = set_connection.createDataChannel(pass)
   channel.onopen = e => {
     console.log('channel open!')
-    document.getElementById("fileElem").click()
+    document.getElementById("fileElem").hidden = false
   }
   channel.onclose = e => {
     console.log('close!!')
@@ -207,60 +207,83 @@ const select = async (e) => {
   <div class="container mx-auto h-screen">
     <div class="relative w-full h-full">
       <div
-        :class="[showDialog ? 'max-h-screen' : 'max-h-24']"
-        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-all duration-500 ease-out overflow-hidden w-full"
+        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-all duration-500 ease-out"
       >
         <div class="flex w-full justify-center">
-          <div
-            @click="start"
-            :class="[side === 'recv' ? 'pointer-events-none opacity-70' : '']"
-            class="rounded-full bg-indigo-400 shadow-lg h-20 w-20 flex justify-center items-center cursor-pointer hover:bg-sky-600 transition-all duration-100 ease-out"
+          <transition
+            enter-active-class="transition-all"
+            leave-active-class="transition-all ease-out duration-500"
+            leave-to-class="-translate-x-full opacity-0"
           >
-            <h1 class="text-white font-bold text-xl">Send</h1>
-          </div>
-          <div
-            @click="recv"
-            :class="[side === 'start' ? 'pointer-events-none opacity-70' : '']"
-            class="ml-2 rounded-full bg-indigo-400 shadow-lg h-20 w-20 flex justify-center items-center cursor-pointer hover:bg-sky-600 transition-all duration-100 ease-out"
+            <div
+              @click="start"
+              v-if="side !== 'recv'"
+              class="rounded-full bg-indigo-400 shadow-lg h-20 w-20 flex justify-center items-center cursor-pointer hover:bg-sky-600 transition-all duration-100 ease-out"
+            >
+              <h1 class="text-white font-bold text-xl">Send</h1>
+            </div>
+          </transition>
+          <transition
+            enter-active-class="transition-all"
+            leave-active-class="transition-all ease-out duration-500"
+            leave-to-class="translate-x-full opacity-0"
           >
-            <h1 class="text-white font-bold text-xl">Receive</h1>
-          </div>
+            <div
+              @click="recv"
+              v-if="side !== 'start'"
+              class="ml-2 rounded-full bg-indigo-400 shadow-lg h-20 w-20 flex justify-center items-center cursor-pointer hover:bg-sky-600 transition-all duration-100 ease-out"
+            >
+              <h1 class="text-white font-bold text-xl">Receive</h1>
+            </div>
+          </transition>
         </div>
-        <div class="mt-5 flex justify-center">
-          <div class="p-4 my-2 bg-indigo-100 rounded-lg ">
-            <div v-if="side === 'start'">
-              <label for="email" class="block text-sm font-medium text-gray-700">ID</label>
-              <div class="mt-1">
-                <input
-                  v-model="showID"
-                  type="text"
-                  name="showID"
-                  id="showID"
-                  readonly
-                  class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                />
-                 <input type="file" id="fileElem" hidden @change="select" />
+        <transition
+          enter-active-class="transition-all ease-out duration-500"
+          leave-active-class="transition-all ease-in duration-500"
+          enter-from-class="translate-y-full opacity-0"
+        >
+          <div v-if="side !== ''" class="mt-5 flex justify-center">
+            <div class="p-4 my-2 bg-indigo-100 rounded-lg">
+              <div v-if="side === 'start'">
+                <label for="email" class="block text-sm font-medium text-gray-700">ID</label>
+                <div class="mt-1">
+                  <input
+                    v-model="showID"
+                    type="text"
+                    name="showID"
+                    id="showID"
+                    readonly
+                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                  />
+                  <input
+                    class="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                    type="file"
+                    id="fileElem"
+                    hidden
+                    @change="select"
+                  />
+                </div>
+              </div>
+              <div v-else-if="side === 'recv'">
+                <label for="email" class="block text-sm font-medium text-gray-700">ID</label>
+                <div class="mt-1">
+                  <input
+                    v-model="ID"
+                    type="text"
+                    name="ID"
+                    id="ID"
+                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                  />
+                </div>
+                <button
+                  @click="submitIce()"
+                  class="mt-2 bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
+                  id="start"
+                >Submit</button>
               </div>
             </div>
-            <div v-else-if="side === 'recv'">
-              <label for="email" class="block text-sm font-medium text-gray-700">ID</label>
-              <div class="mt-1">
-                <input
-                  v-model="ID"
-                  type="text"
-                  name="ID"
-                  id="ID"
-                  class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                />
-              </div>
-              <button
-              @click="submitIce()"
-              class="mt-2 bg-sky-500 hover:bg-sky-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white"
-              id="start"
-            >Submit</button>
-            </div>
           </div>
-        </div>
+        </transition>
       </div>
     </div>
   </div>
