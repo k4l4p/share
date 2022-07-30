@@ -1,10 +1,9 @@
 # share
 
-(Probably) A file transfer app using (probably) webRTC (or purely peerJS)
+A file transfer app, without uploading files to server
 
 ## Tasks
 
 - [ ] ~~implement peerJS connection~~
-- [ ] ~~file transfer while peerJS~~ (Vue3 doesn't support peerjs)
-- [ ] webRTC server 
-- [x] webRTC client
+- [X] [Signaling Server](https://github.com/k4l4p/share_signaling)
+- [X] webRTC client
